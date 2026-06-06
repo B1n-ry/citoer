@@ -1,0 +1,64 @@
+name: Run App
+
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: "Quote message from Slack (required)"
+        required: true
+      quoter:
+        description: "Name of the quoter (required)"
+        required: true
+
+jobs:
+  check-artifact:
+    runs-on: ubuntu-latest
+    outputs:
+      binary_exists: ${{ steps.check.outputs.binary_exists }}
+    steps:
+      - name: Try to download binary
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: citoer-binary
+
+      - name: Check if binary exists
+        id: check
+        run: |
+          if [ -f citoer ]; then
+            echo "binary_exists=true" >> $GITHUB_OUTPUT
+            echo "✓ Using cached binary"
+          else
+            echo "binary_exists=false" >> $GITHUB_OUTPUT
+            echo "⚠ Artifact expired or not found. Will rebuild..."
+          fi
+
+  build:
+    needs: check-artifact
+    if: needs.check-artifact.outputs.binary_exists == 'false'
+    uses: ./.github/workflows/build.yml
+
+  run:
+    needs: [check-artifact, build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: citoer-binary
+
+      - name: Make binary executable
+        run: chmod +x citoer
+
+      - name: Run app
+        run: ./citoer
+        env:
+          MESSAGE: ${{ github.event.inputs.message }}
+          QUOTER: ${{ github.event.inputs.quoter }}
+
+          # Storage option
+          STORAGE: "google_sheets" # Make this configurable from github variables
+
+          # Database configurations
+          GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
