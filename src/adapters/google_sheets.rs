@@ -65,7 +65,7 @@ impl StorageAdapter for GoogleSheetsAdapter {
             req.values = Some(vec![vec![
                 Value::from(quote),
                 Value::from(quotee),
-                Value::from(receiver),
+                Value::from(receiver.unwrap_or("")), // If left as optional and it's None, next cell will misalign
                 Value::from(quoter),
             ]]);
 
