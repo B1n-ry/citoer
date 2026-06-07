@@ -16,10 +16,11 @@ jobs:
     outputs:
       binary_exists: ${{ steps.check.outputs.binary_exists }}
     steps:
-      - name: Pull binary from GHCR
+      - name: Run citoer
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io -u ${{ github.actor }} --password-stdin
-          oras pull ghcr.io/${{ github.repository }}/citoer-binary:latest
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          docker pull ghcr.io/${{ github.repository }}/citoer:latest
+          docker run --rm ghcr.io/${{ github.repository }}/citoer:latest
 
       - name: Check if binary exists
         id: check
@@ -42,10 +43,11 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Pull binary from GHCR
+      - name: Run citoer
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io -u ${{ github.actor }} --password-stdin
-          oras pull ghcr.io/${{ github.repository }}/citoer-binary:latest
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          docker pull ghcr.io/${{ github.repository }}/citoer:latest
+          docker run --rm ghcr.io/${{ github.repository }}/citoer:latest
 
       - name: Make binary executable
         run: chmod +x citoer
