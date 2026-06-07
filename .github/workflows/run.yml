@@ -16,11 +16,10 @@ jobs:
     outputs:
       binary_exists: ${{ steps.check.outputs.binary_exists }}
     steps:
-      - name: Try to download binary
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          name: citoer-binary
+      - name: Pull binary from GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io -u ${{ github.actor }} --password-stdin
+          oras pull ghcr.io/${{ github.repository }}/citoer-binary:latest
 
       - name: Check if binary exists
         id: check
@@ -43,10 +42,10 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Download binary
-        uses: actions/download-artifact@v4
-        with:
-          name: citoer-binary
+      - name: Pull binary from GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io -u ${{ github.actor }} --password-stdin
+          oras pull ghcr.io/${{ github.repository }}/citoer-binary:latest
 
       - name: Make binary executable
         run: chmod +x citoer
