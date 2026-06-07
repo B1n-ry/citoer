@@ -18,9 +18,10 @@ jobs:
     steps:
       - name: Run citoer
         run: |
+          REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-          docker pull ghcr.io/${{ github.repository }}/citoer:latest
-          docker run --rm ghcr.io/${{ github.repository }}/citoer:latest
+          docker pull ghcr.io/${REPO}/citoer:latest
+          docker run --rm ghcr.io/${REPO}/citoer:latest
 
       - name: Check if binary exists
         id: check
@@ -45,9 +46,10 @@ jobs:
     steps:
       - name: Run citoer
         run: |
+          REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-          docker pull ghcr.io/${{ github.repository }}/citoer:latest
-          docker run --rm ghcr.io/${{ github.repository }}/citoer:latest
+          docker pull ghcr.io/${REPO}/citoer:latest
+          docker run --rm ghcr.io/${REPO}/citoer:latest
 
       - name: Make binary executable
         run: chmod +x citoer
