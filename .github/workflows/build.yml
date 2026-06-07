@@ -22,7 +22,8 @@ jobs:
       - name: Build release binary
         run: cargo build --release
 
-      - name: Push binary to GHCR as OCI artifact
+      - name: Build and push Docker image
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io -u ${{ github.actor }} --password-stdin
-          oras push ghcr.io/${{ github.repository }}/citoer-binary:latest ./target/release/citoer
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          docker build -t ghcr.io/${{ github.repository }}/citoer:latest .
+          docker push ghcr.io/${{ github.repository }}/citoer:latest
