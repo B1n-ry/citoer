@@ -47,11 +47,14 @@ jobs:
           REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
           docker pull ghcr.io/${REPO}:latest
+
+          echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT }}' > /tmp/service_account.json
+
           docker run --rm \
             -e MESSAGE="${{ github.event.inputs.message }}" \
             -e QUOTER="${{ github.event.inputs.quoter }}" \
             -e STORAGE="google_sheets" \
-            -e GOOGLE_SERVICE_ACCOUNT="${{ secrets.GOOGLE_SERVICE_ACCOUNT }}" \
+            -e GOOGLE_SERVICE_ACCOUNT="$(cat /tmp/service_account.json)" \
             -e GOOGLE_SHEETS_PAGE_NAME="${{ vars.GOOGLE_SHEETS_PAGE_NAME }}" \
             -e GOOGLE_SHEETS_SPREADSHEET_ID="${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}" \
             ghcr.io/${REPO}:latest
