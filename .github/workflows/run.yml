@@ -14,7 +14,7 @@ jobs:
   check-artifact:
     runs-on: ubuntu-latest
     permissions:
-      packages: read
+      packages: write
     outputs:
       binary_exists: ${{ steps.check.outputs.binary_exists }}
     steps:
