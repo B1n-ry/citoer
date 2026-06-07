@@ -61,4 +61,6 @@ jobs:
           STORAGE: "google_sheets" # Make this configurable from github variables
 
           # Database configurations
-          GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
+          GOOGLE_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
+          GOOGLE_SHEETS_PAGE_NAME: ${{ vars.GOOGLE_SHEETS_PAGE_NAME }}
+          GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}

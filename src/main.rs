@@ -7,7 +7,8 @@ use std::env;
 
 const QUOTE_REGEX: &str = r#"(?P<quote1>["\"”])?(?P<text>.*?)(?P<quote2>["\"”])?\s*-\s*@?(?P<quotee>.*?)(?P<till>\s+till\s+@(?P<receiver>.*))?$"#;
 
-fn main() {
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
     dotenv::dotenv().ok();
 
     let message = env::var("MESSAGE").expect("MESSAGE env var required");
@@ -25,9 +26,10 @@ fn main() {
 
     let adapter_name = env::var("STORAGE").unwrap_or("google_sheets".to_string());
     let adapter = adapters::get_adapter(&adapter_name)
+        .await
         .expect(&format!("No adapter found for '{}'", adapter_name));
 
-    let save_result = adapter.save(&ungrouped_message);
+    let save_result = adapter.save(&ungrouped_message).await;
     match save_result {
         Err(err) => {
             println!("Error: {}", err);
@@ -38,7 +40,7 @@ fn main() {
     };
 }
 
-fn ungroup(message: &str) -> Option<GroupedData> {
+fn ungroup<'a>(message: &'a str) -> Option<GroupedData<'a>> {
     let regex = Regex::new(QUOTE_REGEX).ok()?;
 
     let caps = regex.captures(message)?;
