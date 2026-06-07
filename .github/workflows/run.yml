@@ -11,63 +11,47 @@ on:
         required: true
 
 jobs:
-  check-artifact:
+  check-image:
     runs-on: ubuntu-latest
     permissions:
       packages: read
     outputs:
-      binary_exists: ${{ steps.check.outputs.binary_exists }}
+      image_exists: ${{ steps.check.outputs.image_exists }}
     steps:
-      - name: Run citoer
-        run: |
-          REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-          docker pull ghcr.io/${REPO}:latest
-          docker run --rm ghcr.io/${REPO}:latest
-
-      - name: Check if binary exists
+      - name: Check if image exists in GHCR
         id: check
         run: |
-          if [ -f citoer ]; then
-            echo "binary_exists=true" >> $GITHUB_OUTPUT
-            echo "✓ Using cached binary"
+          REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          if docker manifest inspect ghcr.io/${REPO}:latest > /dev/null 2>&1; then
+            echo "image_exists=true" >> $GITHUB_OUTPUT
+            echo "✓ Image found in GHCR"
           else
-            echo "binary_exists=false" >> $GITHUB_OUTPUT
-            echo "⚠ Artifact expired or not found. Will rebuild..."
+            echo "image_exists=false" >> $GITHUB_OUTPUT
+            echo "⚠ Image not found. Will rebuild..."
           fi
 
   build:
-    needs: check-artifact
-    if: needs.check-artifact.outputs.binary_exists == 'false'
+    needs: check-image
+    if: needs.check-image.outputs.image_exists == 'false'
     permissions:
       packages: write
     uses: ./.github/workflows/build.yml
 
   run:
-    needs: [check-artifact, build]
+    needs: [check-image, build]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Run citoer
+      - name: Pull and run citoer
         run: |
           REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
           docker pull ghcr.io/${REPO}:latest
-          docker run --rm ghcr.io/${REPO}:latest
-
-      - name: Make binary executable
-        run: chmod +x citoer
-
-      - name: Run app
-        run: ./citoer
-        env:
-          MESSAGE: ${{ github.event.inputs.message }}
-          QUOTER: ${{ github.event.inputs.quoter }}
-
-          # Storage option
-          STORAGE: "google_sheets" # Make this configurable from github variables
-
-          # Database configurations
-          GOOGLE_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
-          GOOGLE_SHEETS_PAGE_NAME: ${{ vars.GOOGLE_SHEETS_PAGE_NAME }}
-          GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
+          docker run --rm \
+            -e MESSAGE="${{ github.event.inputs.message }}" \
+            -e QUOTER="${{ github.event.inputs.quoter }}" \
+            -e STORAGE="google_sheets" \
+            -e GOOGLE_SERVICE_ACCOUNT="${{ secrets.GOOGLE_SERVICE_ACCOUNT }}" \
+            -e GOOGLE_SHEETS_PAGE_NAME="${{ vars.GOOGLE_SHEETS_PAGE_NAME }}" \
+            -e GOOGLE_SHEETS_SPREADSHEET_ID="${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}" \
+            ghcr.io/${REPO}:latest
