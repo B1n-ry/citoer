@@ -1,7 +1,7 @@
 extern crate google_sheets4 as sheets4;
 extern crate hyper;
 use chrono::{DateTime, Utc};
-use google_sheets4::api::{BatchUpdateSpreadsheetRequest, Scope, ValueRange};
+use google_sheets4::api::{BatchUpdateSpreadsheetRequest, Request, Scope, ValueRange};
 use serde_json::Value;
 use sheets4::{hyper_rustls, hyper_util, Sheets};
 use std::{collections::HashMap, env, error::Error, future::Future, io, pin::Pin};
@@ -15,30 +15,26 @@ pub struct GoogleSheetsAdapter {
     spreadsheet_id: String,
     sheet_name: String,
     hub: Sheets<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>>,
-    column_config: HashMap<StorageColumn, char>,
 }
 
+#[repr(u8)]
 #[derive(PartialEq, Eq, Hash)]
 enum StorageColumn {
-    QUOTE,
-    QUOTEE,
-    RECEIVER,
-    QUOTER,
-    ID,
-    TIME,
+    Quote = b'A',
+    Quotee = b'B',
+    Receiver = b'C',
+    Quoter = b'D',
+    Time = b'E',
+}
+
+impl From<StorageColumn> for char {
+    fn from(value: StorageColumn) -> Self {
+        value as u8 as char
+    }
 }
 
 // Type of START_ROW can be changed freely
 const START_ROW: u16 = 2;
-
-const COLUMN_CONFIG: [(StorageColumn, char); 6] = [
-    (StorageColumn::QUOTE, 'A'),
-    (StorageColumn::QUOTEE, 'B'),
-    (StorageColumn::RECEIVER, 'C'),
-    (StorageColumn::QUOTER, 'D'),
-    (StorageColumn::TIME, 'E'),
-    (StorageColumn::ID, 'F'),
-];
 
 impl GoogleSheetsAdapter {
     pub async fn new() -> Result<Self, io::Error> {
@@ -69,23 +65,13 @@ impl GoogleSheetsAdapter {
             spreadsheet_id,
             sheet_name,
             hub,
-            column_config: HashMap::from(COLUMN_CONFIG),
         })
     }
-    async fn get_id_rows(&self) -> HashMap<String, usize> {
-        let column_name = self
-            .column_config
-            .get(&StorageColumn::ID)
-            .expect("Missing ID in configuration");
-        let range = format!(
-            "{}!{}{}:{}",
-            self.sheet_name, column_name, START_ROW, column_name,
-        );
-
+    async fn get_quote_rows(&self) -> HashMap<String, usize> {
         let (_response, value_range) = match self
             .hub
             .spreadsheets()
-            .values_get(&self.spreadsheet_id, &range)
+            .values_get(&self.spreadsheet_id, &self.sheet_name)
             .doit()
             .await
         {
@@ -113,24 +99,41 @@ impl GoogleSheetsAdapter {
 impl StorageAdapter for GoogleSheetsAdapter {
     fn save<'a>(
         &'a self,
-        data: &Vec<SaveData>,
+        data: &'a Vec<SaveData>,
     ) -> Pin<Box<dyn Future<Output = Result<(), Box<dyn Error>>> + Send + 'a>> {
         Box::pin(async move {
-            let MediaMessage::Grouped {
-                quote,
-                quotee,
-                receiver,
-            } = &data.message
-            else {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "Supplied message was not grouped up",
-                ))
-                .map_err(|e| Box::new(e) as Box<dyn Error>);
-            };
+            let mut quotes: Vec<Vec<Value>> = Vec::new();
+            let mut quotees: Vec<Vec<Value>> = Vec::new();
+            let mut quoters: Vec<Vec<Value>> = Vec::new();
+            let mut receivers: Vec<Vec<Value>> = Vec::new();
+            let mut times: Vec<Vec<Value>> = Vec::new();
+
+            data.iter().cloned().for_each(|d| {
+                let [quote, quotee, receiver]: [Value; 3] = match d.message {
+                    MediaMessage::Full { message } => {
+                        [Value::String(message), Value::Null, Value::Null]
+                    }
+                    MediaMessage::Grouped {
+                        quote,
+                        quotee,
+                        receiver,
+                    } => [
+                        Value::String(quote),
+                        Value::String(quotee),
+                        receiver.map_or(Value::Null, Value::String),
+                    ],
+                };
+                quotes.push(vec![quote]);
+                quotees.push(vec![quotee]);
+                receivers.push(vec![receiver]);
+                quoters.push(vec![Value::String(d.author)]);
+                times.push(d.time.map_or(vec![Value::Null], |date| {
+                    vec![Value::String(date.to_string())]
+                }));
+            });
 
             // If left as optional and it's None, next cell will misalign
-            let receiver: &str = receiver.as_ref().map_or("", |s| s.as_str());
+            /* let receiver: &str = receiver.as_ref().map_or("", |s| s.as_str()); */
 
             // Create a ValueRange with the data to append
             /* let mut req = ValueRange::default();
@@ -153,7 +156,10 @@ impl StorageAdapter for GoogleSheetsAdapter {
                 .map(|_| ())
                 .map_err(|e| Box::new(e) as Box<dyn Error>) */
 
-            let mut req = BatchUpdateSpreadsheetRequest::default();
+            let req = BatchUpdateSpreadsheetRequest {
+                requests: Some(vec![]),
+                ..Default::default()
+            };
             todo!("Make dynamic stores using batch updates");
         })
     }
@@ -162,7 +168,7 @@ impl StorageAdapter for GoogleSheetsAdapter {
         &'a self,
     ) -> Pin<Box<dyn Future<Output = Option<DateTime<Utc>>> + Send + 'a>> {
         Box::pin(async move {
-            let time_letter = self.column_config.get(&StorageColumn::TIME)?;
+            let time_letter = char::from(StorageColumn::Time);
 
             let range = format!(
                 "{}!{}{}:{}",
@@ -174,7 +180,7 @@ impl StorageAdapter for GoogleSheetsAdapter {
                 .values_get(&self.spreadsheet_id, &range)
                 .doit()
                 .await
-                .inspect_err(|e| println!("{}", e))
+                .inspect_err(|e| println!("Failed to fetch all times: {}", e))
                 .ok()?;
 
             let values = value_range.values?;
