@@ -1,9 +1,12 @@
-mod adapters;
+mod media_adapters;
+mod storage_adapters;
 
-use adapters::GroupedData;
+use chrono::{DateTime, Utc};
 use dotenv;
 use regex::Regex;
-use std::env;
+use std::{env, io};
+
+use crate::MediaMessage::Full;
 
 const QUOTE_REGEX: &str = r#"(?P<quote1>["\"”])?(?P<text>.*?)(?P<quote2>["\"”])?\s*-\s*@?(?P<quotee>.*?)(?P<till>\s+till\s+@(?P<receiver>.*))?$"#;
 
@@ -11,45 +14,107 @@ const QUOTE_REGEX: &str = r#"(?P<quote1>["\"”])?(?P<text>.*?)(?P<quote2>["\"�
 async fn main() {
     dotenv::dotenv().ok();
 
-    let message = env::var("MESSAGE").expect("MESSAGE env var required");
-    let quoter = env::var("QUOTER").expect("QUOTER env var required");
+    let quote_regex = env::var("QUOTE_REGEX").unwrap_or(String::from(QUOTE_REGEX));
 
-    let Some(ungrouped_message) = ungroup(&message) else {
-        println!("Error: Invalid format on message '{}'", message);
-        return;
-    };
+    let media_adapter_name = env::var("MEDIA_ADAPTER").unwrap_or(String::from("slack"));
+    let storage_adapter_name = env::var("STORAGE_ADAPTER").unwrap_or(String::from("google_sheets"));
 
-    let ungrouped_message = GroupedData {
-        quoter: &quoter,
-        ..ungrouped_message
-    };
-
-    let adapter_name = env::var("STORAGE").unwrap_or("google_sheets".to_string());
-    let adapter = adapters::get_adapter(&adapter_name)
+    let media_adapter = media_adapters::get_adapter(&media_adapter_name)
         .await
-        .expect(&format!("No adapter found for '{}'", adapter_name));
+        .expect(&format!(
+            "No media adapter found for '{}'",
+            media_adapter_name
+        ));
+    let storage_adapter = storage_adapters::get_adapter(&storage_adapter_name)
+        .await
+        .expect(&format!(
+            "No storage adapter found for '{}'",
+            storage_adapter_name
+        ));
 
-    let save_result = adapter.save(&ungrouped_message).await;
-    match save_result {
-        Err(err) => {
-            println!("Error: {}", err);
-        }
-        Ok(_) => {
-            println!("Successfully updated data!");
-        }
-    };
+    let latest_saved_time = storage_adapter.get_most_recent_time().await;
+
+    let messages = media_adapter
+        .get_messages(&latest_saved_time)
+        .await
+        .expect("Failed to fetch messages");
+
+    let grouped: Vec<SaveData> = messages
+        .iter()
+        .map(|m| {
+            let grouped_message = match m.message.group(&quote_regex) {
+                Ok(ok) => ok,
+                Err(e) => panic!("{}", e),
+            };
+            SaveData {
+                message: grouped_message,
+                ..m.clone()
+            }
+        })
+        .collect();
+
+    storage_adapter.save(&grouped);
 }
 
-fn ungroup<'a>(message: &'a str) -> Option<GroupedData<'a>> {
-    let regex = Regex::new(QUOTE_REGEX).ok()?;
+#[derive(Clone)]
+struct SaveData {
+    id: String,
+    message: MediaMessage,
+    author: String,
+    time: Option<DateTime<Utc>>,
+}
+#[derive(Clone)]
+enum MediaMessage {
+    Full {
+        message: String,
+    },
+    Grouped {
+        quote: String,
+        quotee: String,
+        receiver: Option<String>,
+    },
+}
 
-    let caps = regex.captures(message)?;
-    let groups = GroupedData {
-        quote: caps.name("text")?.as_str(),
-        quotee: caps.name("quotee")?.as_str(),
-        quoter: "",
-        receiver: caps.name("receiver").map(|m| m.as_str()),
-    };
+impl MediaMessage {
+    fn group(&self, regex: &str) -> Result<Self, io::Error> {
+        let regex = Regex::new(regex).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                match e {
+                    regex::Error::Syntax(err) => format!("Regex is not valid: {}", err),
+                    regex::Error::CompiledTooBig(err) => {
+                        format!("Regex is too big. Exceeded size limit {}", err)
+                    }
+                    _ => String::from("Unknown error generating regex"),
+                },
+            )
+        })?;
 
-    Some(groups)
+        let Full { message } = self else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Already ungrouped",
+            ));
+        };
+
+        let caps = regex.captures(&message).ok_or(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Data does not match regex; no match found",
+        ))?;
+
+        let Some((quote, quotee)) = caps.name("text").zip(caps.name("quotee")) else {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "Missing required regex captures",
+            ));
+        };
+
+        let groups = MediaMessage::Grouped {
+            quote: String::from(quote.as_str()),
+            quotee: String::from(quotee.as_str()),
+            receiver: caps.name("receiver").map(|m| String::from(m.as_str())),
+        };
+
+        Ok(groups)
+    }
 }
