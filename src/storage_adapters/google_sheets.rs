@@ -37,7 +37,7 @@ impl From<StorageColumn> for char {
 const START_ROW: u16 = 2;
 
 fn get_range_row_bounds(range: &str) -> Option<(usize, usize)> {
-    let range = range.split('!').last()?;
+    let range = range.split('!').next_back()?; // We can allow for '!' to be in the sheet name, but it can't be in the column or row section of the range
     let (start, end) = range.split_once(':')?;
     let start_row: usize = start.trim_start_matches(char::is_alphabetic).parse().ok()?;
     let end_row: usize = end.trim_start_matches(char::is_alphabetic).parse().ok()?;
@@ -112,27 +112,60 @@ impl GoogleSheetsAdapter {
             return HashMap::new();
         };
 
-        // TODO: Make sure the heights are the same in the two ranges
+        let quote_range_first_row = quote_values
+            .range
+            .as_ref()
+            .and_then(|r| get_range_row_bounds(r).map(|(start, _end)| start));
+        let quotee_range_first_row = quotee_values
+            .range
+            .as_ref()
+            .and_then(|r| get_range_row_bounds(r).map(|(start, _end)| start));
+
+        let Some(start_ranges) = quote_range_first_row.zip(quotee_range_first_row) else {
+            println!(
+                "Could not identify ranges from google sheets response when fetching message cache"
+            );
+            return HashMap::new();
+        };
 
         // Get Option references so we don't require clone or copy
         let (quote_values, quotee_values) =
             (quote_values.values.as_ref(), quotee_values.values.as_ref());
         let (Some(quotes), Some(quotees)) = (
-            quote_values.map(|v| v.first()).flatten(),
-            quotee_values.map(|v| v.first()).flatten(),
+            quote_values.and_then(|v| v.first()),
+            quotee_values.and_then(|v| v.first()),
         ) else {
             // Values not found (empty spreadsheet?)
             return HashMap::new();
         };
+
+        let quotee_iter = quotees.iter().map(|q| q.as_str());
+
+        // Quotes are THE most important. If some message does not have a quotee for some reason, don't dupe them.
+        // We can here convert quotee list/iterator into optional strings, and chaining with `None`, guaranteeing
+        // that the quotes will be the limiting factor. We combine this with the knowledge of which row each column
+        // starts at, and using this we determine how the quotee iterator should look
+        let quotee_iter: Box<dyn Iterator<Item = Option<&str>>> = match start_ranges {
+            (a, b) if a < b => Box::new(iter::repeat_n(None, b - a).chain(quotee_iter))
+                as Box<dyn Iterator<Item = Option<&str>>>,
+            (a, b) if a > b => Box::new(quotee_iter.skip(a - b).chain(iter::repeat(None)))
+                as Box<dyn Iterator<Item = Option<&str>>>,
+            _ => Box::new(quotee_iter.chain(iter::repeat(None)))
+                as Box<dyn Iterator<Item = Option<&str>>>,
+        };
+
         quotes
             .iter()
-            // Quotes are THE most important. If some message does not have a quoter for some reason, don't dupe them.
-            // We can here convert quotee list/iterator into optional strings, and chaining with `None`, guaranteeing
-            // that the quotes will be the limiting factor.
-            .zip(quotees.iter().map(|q| q.as_str()).chain(iter::repeat(None)))
+            .zip(quotee_iter)
             .enumerate()
             .filter_map(|(i, (quote, quotee))| Some((i, quote.as_str()?, quotee)))
-            .map(|(i, quote, quotee)| (format!("{}::{}", quote, quotee.unwrap_or("")), i))
+            .map(|(i, quote, quotee)| {
+                (
+                    format!("{}::{}", quote, quotee.unwrap_or("")),
+                    // This should never revert to START_ROW since we know 'quote_range_first_row' is not None
+                    i + quote_range_first_row.unwrap_or(START_ROW as usize),
+                )
+            })
             .collect()
     }
 }
