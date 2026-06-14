@@ -7,7 +7,7 @@ use sheets4::{hyper_rustls, hyper_util, Sheets};
 use std::{collections::HashMap, env, error::Error, future::Future, io, pin::Pin};
 use yup_oauth2::{self, ServiceAccountAuthenticator};
 
-use crate::{MediaMessage, SaveData};
+use crate::{MediaMessage, PinnedAsync, SaveData};
 
 use super::StorageAdapter;
 
@@ -68,10 +68,27 @@ impl GoogleSheetsAdapter {
         })
     }
     async fn get_quote_rows(&self) -> HashMap<String, usize> {
-        let (_response, value_range) = match self
+        let quote_range = format!(
+            "{}!{}{}:{}",
+            self.sheet_name,
+            StorageColumn::Quote.into(),
+            START_ROW,
+            StorageColumn::Quote.into(),
+        );
+        let quotee_range = format!(
+            "{}!{}{}:{}",
+            self.sheet_name,
+            StorageColumn::Quotee.into(),
+            START_ROW,
+            StorageColumn::Quotee.into(),
+        );
+        let (_response, batch_ranges) = match self
             .hub
             .spreadsheets()
-            .values_get(&self.spreadsheet_id, &self.sheet_name)
+            .values_batch_get(&self.spreadsheet_id)
+            .add_ranges(&quote_range)
+            .add_ranges(&quotee_range)
+            .major_dimension("COLUMNS")
             .doit()
             .await
         {
@@ -80,6 +97,10 @@ impl GoogleSheetsAdapter {
                 println!("Failed to fetch IDs in sheet: {}", e);
                 return HashMap::new();
             }
+        };
+        let Some([quote_values, quotee_values]) = batch_ranges.value_ranges.as_deref() else {
+            // No data was found
+            return HashMap::new();
         };
         let Some(values) = value_range.values else {
             // No IDs were found at all, presumably due to an empty sheet
@@ -97,16 +118,13 @@ impl GoogleSheetsAdapter {
 }
 
 impl StorageAdapter for GoogleSheetsAdapter {
-    fn save<'a>(
-        &'a self,
-        data: &'a Vec<SaveData>,
-    ) -> Pin<Box<dyn Future<Output = Result<(), Box<dyn Error>>> + Send + 'a>> {
+    fn save<'a>(&'a self, data: &'a [SaveData]) -> PinnedAsync<'a, Result<(), Box<dyn Error>>> {
         Box::pin(async move {
-            let mut quotes: Vec<Vec<Value>> = Vec::new();
-            let mut quotees: Vec<Vec<Value>> = Vec::new();
-            let mut quoters: Vec<Vec<Value>> = Vec::new();
-            let mut receivers: Vec<Vec<Value>> = Vec::new();
-            let mut times: Vec<Vec<Value>> = Vec::new();
+            let mut quotes: Vec<Value> = Vec::new();
+            let mut quotees: Vec<Value> = Vec::new();
+            let mut quoters: Vec<Value> = Vec::new();
+            let mut receivers: Vec<Value> = Vec::new();
+            let mut times: Vec<Value> = Vec::new();
 
             data.iter().cloned().for_each(|d| {
                 let [quote, quotee, receiver]: [Value; 3] = match d.message {
@@ -123,13 +141,14 @@ impl StorageAdapter for GoogleSheetsAdapter {
                         receiver.map_or(Value::Null, Value::String),
                     ],
                 };
-                quotes.push(vec![quote]);
-                quotees.push(vec![quotee]);
-                receivers.push(vec![receiver]);
-                quoters.push(vec![Value::String(d.author)]);
-                times.push(d.time.map_or(vec![Value::Null], |date| {
-                    vec![Value::String(date.to_string())]
-                }));
+                quotes.push(quote);
+                quotees.push(quotee);
+                receivers.push(receiver);
+                quoters.push(Value::String(d.author));
+                times.push(
+                    d.time
+                        .map_or(Value::Null, |date| Value::String(date.to_string())),
+                );
             });
 
             // If left as optional and it's None, next cell will misalign
@@ -164,9 +183,7 @@ impl StorageAdapter for GoogleSheetsAdapter {
         })
     }
 
-    fn get_most_recent_time<'a>(
-        &'a self,
-    ) -> Pin<Box<dyn Future<Output = Option<DateTime<Utc>>> + Send + 'a>> {
+    fn get_most_recent_time<'a>(&'a self) -> PinnedAsync<'a, Option<DateTime<Utc>>> {
         Box::pin(async move {
             let time_letter = char::from(StorageColumn::Time);
 

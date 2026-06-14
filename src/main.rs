@@ -2,11 +2,12 @@ mod media_adapters;
 mod storage_adapters;
 
 use chrono::{DateTime, Utc};
-use dotenv;
 use regex::Regex;
-use std::{env, io};
+use std::{env, future::Future, io, pin::Pin};
 
 use crate::MediaMessage::Full;
+
+type PinnedAsync<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 const QUOTE_REGEX: &str = r#"(?P<quote1>["\"”])?(?P<text>.*?)(?P<quote2>["\"”])?\s*-\s*@?(?P<quotee>.*?)(?P<till>\s+till\s+@(?P<receiver>.*))?$"#;
 
@@ -21,16 +22,10 @@ async fn main() {
 
     let media_adapter = media_adapters::get_adapter(&media_adapter_name)
         .await
-        .expect(&format!(
-            "No media adapter found for '{}'",
-            media_adapter_name
-        ));
+        .unwrap_or_else(|_| panic!("No media adapter found for '{}'", media_adapter_name));
     let storage_adapter = storage_adapters::get_adapter(&storage_adapter_name)
         .await
-        .expect(&format!(
-            "No storage adapter found for '{}'",
-            storage_adapter_name
-        ));
+        .unwrap_or_else(|_| panic!("No storage adapter found for '{}'", storage_adapter_name));
 
     let latest_saved_time = storage_adapter.get_most_recent_time().await;
 
@@ -53,7 +48,7 @@ async fn main() {
         })
         .collect();
 
-    storage_adapter.save(&grouped);
+    storage_adapter.save(&grouped).await;
 }
 
 #[derive(Clone)]
@@ -97,7 +92,7 @@ impl MediaMessage {
             ));
         };
 
-        let caps = regex.captures(&message).ok_or(io::Error::new(
+        let caps = regex.captures(message).ok_or(io::Error::new(
             io::ErrorKind::InvalidData,
             "Data does not match regex; no match found",
         ))?;
