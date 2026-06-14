@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use google_sheets4::api::{BatchUpdateSpreadsheetRequest, Request, Scope, ValueRange};
 use serde_json::Value;
 use sheets4::{hyper_rustls, hyper_util, Sheets};
-use std::{collections::HashMap, env, error::Error, future::Future, io, pin::Pin};
+use std::{collections::HashMap, env, error::Error, future::Future, io, iter, pin::Pin};
 use yup_oauth2::{self, ServiceAccountAuthenticator};
 
 use crate::{MediaMessage, PinnedAsync, SaveData};
@@ -35,6 +35,15 @@ impl From<StorageColumn> for char {
 
 // Type of START_ROW can be changed freely
 const START_ROW: u16 = 2;
+
+fn get_range_row_bounds(range: &str) -> Option<(usize, usize)> {
+    let range = range.split('!').last()?;
+    let (start, end) = range.split_once(':')?;
+    let start_row: usize = start.trim_start_matches(char::is_alphabetic).parse().ok()?;
+    let end_row: usize = end.trim_start_matches(char::is_alphabetic).parse().ok()?;
+
+    Some((start_row, end_row))
+}
 
 impl GoogleSheetsAdapter {
     pub async fn new() -> Result<Self, io::Error> {
@@ -71,16 +80,16 @@ impl GoogleSheetsAdapter {
         let quote_range = format!(
             "{}!{}{}:{}",
             self.sheet_name,
-            StorageColumn::Quote.into(),
+            char::from(StorageColumn::Quote),
             START_ROW,
-            StorageColumn::Quote.into(),
+            char::from(StorageColumn::Quote),
         );
         let quotee_range = format!(
             "{}!{}{}:{}",
             self.sheet_name,
-            StorageColumn::Quotee.into(),
+            char::from(StorageColumn::Quotee),
             START_ROW,
-            StorageColumn::Quotee.into(),
+            char::from(StorageColumn::Quotee),
         );
         let (_response, batch_ranges) = match self
             .hub
@@ -102,17 +111,28 @@ impl GoogleSheetsAdapter {
             // No data was found
             return HashMap::new();
         };
-        let Some(values) = value_range.values else {
-            // No IDs were found at all, presumably due to an empty sheet
+
+        // TODO: Make sure the heights are the same in the two ranges
+
+        // Get Option references so we don't require clone or copy
+        let (quote_values, quotee_values) =
+            (quote_values.values.as_ref(), quotee_values.values.as_ref());
+        let (Some(quotes), Some(quotees)) = (
+            quote_values.map(|v| v.first()).flatten(),
+            quotee_values.map(|v| v.first()).flatten(),
+        ) else {
+            // Values not found (empty spreadsheet?)
             return HashMap::new();
         };
-        values
+        quotes
             .iter()
+            // Quotes are THE most important. If some message does not have a quoter for some reason, don't dupe them.
+            // We can here convert quotee list/iterator into optional strings, and chaining with `None`, guaranteeing
+            // that the quotes will be the limiting factor.
+            .zip(quotees.iter().map(|q| q.as_str()).chain(iter::repeat(None)))
             .enumerate()
-            .filter_map(|(i, row)| {
-                row.first()
-                    .map(|id| (id.to_string(), i + START_ROW as usize))
-            })
+            .filter_map(|(i, (quote, quotee))| Some((i, quote.as_str()?, quotee)))
+            .map(|(i, quote, quotee)| (format!("{}::{}", quote, quotee.unwrap_or("")), i))
             .collect()
     }
 }
