@@ -48,7 +48,10 @@ async fn main() {
         })
         .collect();
 
-    storage_adapter.save(&grouped).await;
+    storage_adapter
+        .save(&grouped)
+        .await
+        .expect("Failed to save data");
 }
 
 #[derive(Clone)]
