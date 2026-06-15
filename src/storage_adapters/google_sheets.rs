@@ -1,10 +1,10 @@
 extern crate google_sheets4 as sheets4;
 extern crate hyper;
 use chrono::{DateTime, Utc};
-use google_sheets4::api::{BatchUpdateSpreadsheetRequest, Request, Scope, ValueRange};
+use google_sheets4::api::{BatchUpdateValuesRequest, ValueRange};
 use serde_json::Value;
 use sheets4::{hyper_rustls, hyper_util, Sheets};
-use std::{collections::HashMap, env, error::Error, future::Future, io, iter, pin::Pin};
+use std::{collections::HashMap, env, error::Error, io, iter};
 use yup_oauth2::{self, ServiceAccountAuthenticator};
 
 use crate::{MediaMessage, PinnedAsync, SaveData};
@@ -173,6 +173,8 @@ impl GoogleSheetsAdapter {
 impl StorageAdapter for GoogleSheetsAdapter {
     fn save<'a>(&'a self, data: &'a [SaveData]) -> PinnedAsync<'a, Result<(), Box<dyn Error>>> {
         Box::pin(async move {
+            let quote_rows = self.get_quote_rows().await;
+
             let mut quotes: Vec<Value> = Vec::new();
             let mut quotees: Vec<Value> = Vec::new();
             let mut quoters: Vec<Value> = Vec::new();
@@ -194,6 +196,9 @@ impl StorageAdapter for GoogleSheetsAdapter {
                         receiver.map_or(Value::Null, Value::String),
                     ],
                 };
+                if quote_rows.contains_key(&format!("{}::{}", quote, quotee)) {
+                    return; // Avoid duplicates
+                }
                 quotes.push(quote);
                 quotees.push(quotee);
                 receivers.push(receiver);
@@ -204,35 +209,84 @@ impl StorageAdapter for GoogleSheetsAdapter {
                 );
             });
 
-            // If left as optional and it's None, next cell will misalign
-            /* let receiver: &str = receiver.as_ref().map_or("", |s| s.as_str()); */
+            let first_free_row = quote_rows
+                .values()
+                .max()
+                .copied()
+                .unwrap_or(START_ROW as usize)
+                + 1;
 
-            // Create a ValueRange with the data to append
-            /* let mut req = ValueRange::default();
-            req.values = Some(vec![vec![
-                Value::from(quote.as_str()),
-                Value::from(quotee.as_str()),
-                Value::from(receiver),
-                Value::from(data.author.as_str()),
-            ]]);
+            let req = BatchUpdateValuesRequest {
+                data: Some(vec![
+                    ValueRange {
+                        values: Some(vec![quotes]),
+                        range: Some(format!(
+                            "{}!{}{}:{}",
+                            self.sheet_name,
+                            char::from(StorageColumn::Quote),
+                            first_free_row,
+                            char::from(StorageColumn::Quote),
+                        )),
+                        major_dimension: Some(String::from("COLUMNS")),
+                    },
+                    ValueRange {
+                        values: Some(vec![quotees]),
+                        range: Some(format!(
+                            "{}!{}{}:{}",
+                            self.sheet_name,
+                            char::from(StorageColumn::Quotee),
+                            first_free_row,
+                            char::from(StorageColumn::Quotee),
+                        )),
+                        major_dimension: Some(String::from("COLUMNS")),
+                    },
+                    ValueRange {
+                        values: Some(vec![receivers]),
+                        range: Some(format!(
+                            "{}!{}{}:{}",
+                            self.sheet_name,
+                            char::from(StorageColumn::Receiver),
+                            first_free_row,
+                            char::from(StorageColumn::Receiver),
+                        )),
+                        major_dimension: Some(String::from("COLUMNS")),
+                    },
+                    ValueRange {
+                        values: Some(vec![quoters]),
+                        range: Some(format!(
+                            "{}!{}{}:{}",
+                            self.sheet_name,
+                            char::from(StorageColumn::Quoter),
+                            first_free_row,
+                            char::from(StorageColumn::Quoter),
+                        )),
+                        major_dimension: Some(String::from("COLUMNS")),
+                    },
+                    ValueRange {
+                        values: Some(vec![times]),
+                        range: Some(format!(
+                            "{}!{}{}:{}",
+                            self.sheet_name,
+                            char::from(StorageColumn::Time),
+                            first_free_row,
+                            char::from(StorageColumn::Time),
+                        )),
+                        major_dimension: Some(String::from("COLUMNS")),
+                    },
+                ]),
+                ..Default::default()
+            };
 
             let result = self
                 .hub
                 .spreadsheets()
-                .values_append(req, &self.spreadsheet_id, &self.sheet_name)
-                .value_input_option("USER_ENTERED")
+                .values_batch_update(req, &self.spreadsheet_id)
                 .doit()
                 .await;
 
             result
                 .map(|_| ())
-                .map_err(|e| Box::new(e) as Box<dyn Error>) */
-
-            let req = BatchUpdateSpreadsheetRequest {
-                requests: Some(vec![]),
-                ..Default::default()
-            };
-            todo!("Make dynamic stores using batch updates");
+                .map_err(|e| Box::new(e) as Box<dyn Error>)
         })
     }
 
@@ -265,9 +319,7 @@ impl StorageAdapter for GoogleSheetsAdapter {
                 })
                 .collect();
 
-            let most_recent = mapped_vals.iter().max();
-
-            most_recent.map(|&t| t)
+            mapped_vals.into_iter().max()
         })
     }
 }
