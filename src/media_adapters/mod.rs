@@ -1,16 +1,16 @@
-use std::{error::Error, future::Future, io, pin::Pin};
+use std::{error::Error, io};
 
 use chrono::{DateTime, Utc};
 
-use crate::{media_adapters::slack::SlackAdapter, SaveData};
+use crate::{media_adapters::slack::SlackAdapter, PinnedAsync, SaveData};
 
 mod slack;
 
 pub trait MediaAdapter {
-    fn get_messages(
-        &self,
-        last_message_time: &Option<DateTime<Utc>>,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<SaveData>, Box<dyn Error>>> + Send>>;
+    fn get_messages<'a>(
+        &'a self,
+        last_message_time: &'a Option<DateTime<Utc>>,
+    ) -> PinnedAsync<'a, Result<Vec<SaveData>, Box<dyn Error>>>;
 }
 
 pub async fn get_adapter(name: &str) -> Result<Box<dyn MediaAdapter>, io::Error> {

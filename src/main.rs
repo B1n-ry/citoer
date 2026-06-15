@@ -53,7 +53,6 @@ async fn main() {
 
 #[derive(Clone)]
 struct SaveData {
-    id: String,
     message: MediaMessage,
     author: String,
     time: Option<DateTime<Utc>>,
