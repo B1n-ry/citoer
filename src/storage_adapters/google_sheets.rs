@@ -47,6 +47,10 @@ fn get_range_row_bounds(range: &str) -> Option<(usize, usize)> {
 
 impl GoogleSheetsAdapter {
     pub async fn new() -> Result<Self, io::Error> {
+        rustls::crypto::ring::default_provider()
+            .install_default()
+            .expect("Failed to install rustls crypto provider");
+
         let spreadsheet_id =
             env::var("GOOGLE_SHEETS_SPREADSHEET_ID").expect("Spreadsheet ID not present");
         let sheet_name =
@@ -212,9 +216,7 @@ impl StorageAdapter for GoogleSheetsAdapter {
             let first_free_row = quote_rows
                 .values()
                 .max()
-                .copied()
-                .unwrap_or(START_ROW as usize)
-                + 1;
+                .map_or(START_ROW as usize, |i| *i + 1);
 
             let req = BatchUpdateValuesRequest {
                 data: Some(vec![
@@ -274,6 +276,7 @@ impl StorageAdapter for GoogleSheetsAdapter {
                         major_dimension: Some(String::from("COLUMNS")),
                     },
                 ]),
+                value_input_option: Some(String::from("RAW")),
                 ..Default::default()
             };
 

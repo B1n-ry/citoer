@@ -97,9 +97,11 @@ impl MediaAdapter for SlackAdapter {
                         .user
                         .as_ref()
                         .map(|id| id_username_map.get(id).unwrap_or(id));
+                    let cleartext_message =
+                        substitute_ids(&m.text.unwrap_or_default(), &id_username_map);
                     SaveData {
                         message: MediaMessage::Full {
-                            message: m.text.unwrap_or_default(),
+                            message: cleartext_message,
                         },
                         time: timestamp,
                         author: username.cloned().unwrap_or_default(),
@@ -118,6 +120,28 @@ fn parse_slack_ts(ts: &str) -> Option<DateTime<Utc>> {
     let secs: i64 = secs_str.parse().ok()?;
     let micros: i64 = micros_str.parse().ok()?;
     Utc.timestamp_micros(secs * 1_000_000 + micros).single()
+}
+
+fn substitute_ids(input: &str, id_name_map: &HashMap<String, String>) -> String {
+    let mut message_reconstructor: Vec<&str> = Vec::new();
+
+    for section in input.split("<@") {
+        let Some((identifier, rest)) = section.split_once('>') else {
+            message_reconstructor.push(section);
+            continue;
+        };
+        let (id, fallback) = match identifier.split_once('|') {
+            Some((id, fallback)) => (id, fallback),
+            None => (identifier, ""),
+        };
+        let addition = match id_name_map.get(id) {
+            Some(username) => username,
+            None => id,
+        };
+        message_reconstructor.extend([addition, fallback, rest]);
+    }
+
+    message_reconstructor.join("")
 }
 
 impl SlackAdapter {

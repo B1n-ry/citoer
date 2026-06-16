@@ -9,7 +9,7 @@ use crate::MediaMessage::Full;
 
 type PinnedAsync<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
-const QUOTE_REGEX: &str = r#"(?P<quote1>["\"”])?(?P<text>.*?)(?P<quote2>["\"”])?\s*-\s*@?(?P<quotee>.*?)(?P<till>\s+till\s+@(?P<receiver>.*))?$"#;
+const QUOTE_REGEX: &str = r#"(?P<quote1>["\"”])?(?P<text>.*?)(?P<quote2>["\"”])?\s*-\s*@?(?P<quotee>.*?)(?P<till>\s+till\s+@?(?P<receiver>.*))?$"#;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
