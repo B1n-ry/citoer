@@ -31,10 +31,15 @@ async fn main() {
 
     let media_adapter = media_adapters::get_adapter(&media_adapter_name)
         .await
-        .unwrap_or_else(|_| panic!("No media adapter found for '{}'", media_adapter_name));
+        .unwrap_or_else(|e| panic!("No media adapter found for '{}'\n{}", media_adapter_name, e));
     let storage_adapter = storage_adapters::get_adapter(&storage_adapter_name)
         .await
-        .unwrap_or_else(|_| panic!("No storage adapter found for '{}'", storage_adapter_name));
+        .unwrap_or_else(|e| {
+            panic!(
+                "No storage adapter found for '{}'\n{}",
+                storage_adapter_name, e
+            )
+        });
 
     let latest_saved_time = storage_adapter.get_most_recent_time().await;
 

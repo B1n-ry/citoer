@@ -41,6 +41,7 @@ jobs:
         env:
           QUOTE_REGEX: ${{ vars.QUOTE_REGEX }}
           STORAGE_ADAPTER: ${{ vars.STORAGE_ADAPTER }}
+          GOOGLE_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
           GOOGLE_SHEETS_PAGE_NAME: ${{ vars.GOOGLE_SHEETS_PAGE_NAME }}
           GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
           MEDIA_ADAPTER: ${{ vars.MEDIA_ADAPTER }}
