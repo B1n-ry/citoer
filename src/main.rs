@@ -15,10 +15,19 @@ const QUOTE_REGEX: &str = r#"(?P<quote1>["\"‚Äù])?(?P<text>.*?)(?P<quote2>["\"‚Ä
 async fn main() {
     dotenv::dotenv().ok();
 
-    let quote_regex = env::var("QUOTE_REGEX").unwrap_or(String::from(QUOTE_REGEX));
+    let quote_regex = env::var("QUOTE_REGEX")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(String::from(QUOTE_REGEX));
 
-    let media_adapter_name = env::var("MEDIA_ADAPTER").unwrap_or(String::from("slack"));
-    let storage_adapter_name = env::var("STORAGE_ADAPTER").unwrap_or(String::from("google_sheets"));
+    let media_adapter_name = env::var("MEDIA_ADAPTER")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(String::from("slack"));
+    let storage_adapter_name = env::var("STORAGE_ADAPTER")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(String::from("google_sheets"));
 
     let media_adapter = media_adapters::get_adapter(&media_adapter_name)
         .await

@@ -46,6 +46,7 @@ jobs:
           echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT }}' > /tmp/service_account.json
 
           docker run --rm \
+            -e QUOTE_REGEX="${{ vars.QUOTE_REGEX }}" \
             -e STORAGE_ADAPTER="${{ vars.STORAGE_ADAPTER }}" \
             -e GOOGLE_SERVICE_ACCOUNT="$(cat /tmp/service_account.json)" \
             -e GOOGLE_SHEETS_PAGE_NAME="${{ vars.GOOGLE_SHEETS_PAGE_NAME }}" \
