@@ -76,4 +76,12 @@ The format to decide how sections of the quote message are decoded is handled by
 (?P<quote1>["\"”])?(?P<text>.*?)(?P<quote2>["\"”])?\s*-\s*@?(?P<quotee>.*?)(?P<till>\s+till\s+@(?P<receiver>.*))?$
 ```
 
+This translates to the following:
+
+```
+"[quote]" - @[quotee] till @[receiver]"
+```
+
+Where the quotation-, and @-signs are optional, as well as the `till @[receiver]` part. This format is in Swedish (identified by the "till" word). This regex was built for use in Swedish. Feel free to change it if you want to use citoer targeting a different language.
+
 You can define your own by adding the [GitHub variable](#github-variable-management) `QUOTE_REGEX`. Unless you want to go edit the code, the capture groups "text", "quotee", and "receiver" (optional) must be present. These are the capture groups used for the quote itself, the person who was quoted, and if the quote was directed towards someone (and in that case who).
