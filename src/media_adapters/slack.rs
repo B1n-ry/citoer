@@ -130,15 +130,15 @@ fn substitute_ids(input: &str, id_name_map: &HashMap<String, String>) -> String 
             message_reconstructor.push(section);
             continue;
         };
-        let (id, fallback) = match identifier.split_once('|') {
-            Some((id, fallback)) => (id, fallback),
-            None => (identifier, ""),
+        let id = match identifier.split_once('|') {
+            Some((id, _fallback)) => id,
+            None => identifier,
         };
         let addition = match id_name_map.get(id) {
             Some(username) => username,
             None => id,
         };
-        message_reconstructor.extend([addition, fallback, rest]);
+        message_reconstructor.extend([addition, rest]);
     }
 
     message_reconstructor.join("")
