@@ -29,6 +29,12 @@ struct SlackMessage {
 struct SlackUser {
     id: String,
     name: String,
+    profile: SlackUserProfile,
+}
+#[derive(Debug, Deserialize)]
+struct SlackUserProfile {
+    display_name: String,
+    real_name: String,
 }
 #[derive(Debug, Deserialize)]
 struct SlackUserListResponse {
@@ -175,7 +181,15 @@ impl SlackAdapter {
             .members
             .unwrap_or_default()
             .into_iter()
-            .map(|u| (u.id, u.name))
+            .map(|u| {
+                if !u.profile.display_name.is_empty() {
+                    (u.id, u.profile.display_name)
+                } else if !u.profile.real_name.is_empty() {
+                    (u.id, u.profile.real_name)
+                } else {
+                    (u.id, u.name)
+                }
+            })
             .collect())
     }
 }
