@@ -1,14 +1,9 @@
 name: Run App
 
 on:
-  workflow_dispatch:
-    inputs:
-      message:
-        description: "Quote message from Slack (required)"
-        required: true
-      quoter:
-        description: "Name of the quoter (required)"
-        required: true
+  schedule:
+    - cron: "0 12 * * *" # Runs daily at noon
+  workflow_dispatch: # Runs when manually triggered
 
 jobs:
   check-image:
@@ -43,9 +38,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Pull and run citoer
-        env:
-          MESSAGE: ${{ github.event.inputs.message }}
-          QUOTER: ${{ github.event.inputs.quoter }}
         run: |
           REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
@@ -54,10 +46,11 @@ jobs:
           echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT }}' > /tmp/service_account.json
 
           docker run --rm \
-            -e MESSAGE \
-            -e QUOTER \
-            -e STORAGE="google_sheets" \
+            -e STORAGE_ADAPTER="${{ vars.STORAGE_ADAPTER }}" \
             -e GOOGLE_SERVICE_ACCOUNT="$(cat /tmp/service_account.json)" \
             -e GOOGLE_SHEETS_PAGE_NAME="${{ vars.GOOGLE_SHEETS_PAGE_NAME }}" \
             -e GOOGLE_SHEETS_SPREADSHEET_ID="${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}" \
+            -e MEDIA_ADAPTER="${{ vars.MEDIA_ADAPTER }}" \
+            -e SLACK_APP_TOKEN="${{ secrets.SLACK_APP_TOKEN }}" \
+            -e SLACK_CHANNEL_ID="${{ vars.SLACK_CHANNEL_ID }}" \
             ghcr.io/${REPO}:latest
