@@ -38,20 +38,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Pull and run citoer
+        env:
+          QUOTE_REGEX: ${{ vars.QUOTE_REGEX }}
+          STORAGE_ADAPTER: ${{ vars.STORAGE_ADAPTER }}
+          GOOGLE_SHEETS_PAGE_NAME: ${{ vars.GOOGLE_SHEETS_PAGE_NAME }}
+          GOOGLE_SHEETS_SPREADSHEET_ID: ${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}
+          MEDIA_ADAPTER: ${{ vars.MEDIA_ADAPTER }}
+          SLACK_APP_TOKEN: ${{ secrets.SLACK_APP_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ vars.SLACK_CHANNEL_ID }}
+
+          REPO: ${{ github.repository }}
+          ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          REPO=$(echo "$REPO" | tr '[:upper:]' '[:lower:]')
+          echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
           docker pull ghcr.io/${REPO}:latest
 
-          echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT }}' > /tmp/service_account.json
-
           docker run --rm \
-            -e QUOTE_REGEX="${{ vars.QUOTE_REGEX }}" \
-            -e STORAGE_ADAPTER="${{ vars.STORAGE_ADAPTER }}" \
-            -e GOOGLE_SERVICE_ACCOUNT="$(cat /tmp/service_account.json)" \
-            -e GOOGLE_SHEETS_PAGE_NAME="${{ vars.GOOGLE_SHEETS_PAGE_NAME }}" \
-            -e GOOGLE_SHEETS_SPREADSHEET_ID="${{ vars.GOOGLE_SHEETS_SPREADSHEET_ID }}" \
-            -e MEDIA_ADAPTER="${{ vars.MEDIA_ADAPTER }}" \
-            -e SLACK_APP_TOKEN="${{ secrets.SLACK_APP_TOKEN }}" \
-            -e SLACK_CHANNEL_ID="${{ vars.SLACK_CHANNEL_ID }}" \
+            -e QUOTE_REGEX="$QUOTE_REGEX" \
+            -e STORAGE_ADAPTER="$STORAGE_ADAPTER" \
+            -e GOOGLE_SERVICE_ACCOUNT="$GOOGLE_SERVICE_ACCOUNT" \
+            -e GOOGLE_SHEETS_PAGE_NAME="$GOOGLE_SHEETS_PAGE_NAME" \
+            -e GOOGLE_SHEETS_SPREADSHEET_ID="$GOOGLE_SHEETS_SPREADSHEET_ID" \
+            -e MEDIA_ADAPTER="$MEDIA_ADAPTER" \
+            -e SLACK_APP_TOKEN="$SLACK_APP_TOKEN" \
+            -e SLACK_CHANNEL_ID="$SLACK_CHANNEL_ID" \
             ghcr.io/${REPO}:latest
